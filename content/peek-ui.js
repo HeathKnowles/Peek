@@ -4,15 +4,7 @@
     button.type = "button";
     button.dataset.action = action;
     button.textContent = label;
-    button.style.border = "1px solid rgba(0, 0, 0, 0.14)";
-    button.style.background = "#f8fafc";
-    button.style.color = "#0f172a";
-    button.style.padding = "4px 8px";
-    button.style.borderRadius = "7px";
-    button.style.fontSize = "12px";
-    button.style.lineHeight = "1.2";
-    button.style.cursor = "pointer";
-    button.style.whiteSpace = "nowrap";
+    button.className = "peek-action-btn";
     return button;
   }
 
@@ -47,6 +39,99 @@
     const style = document.createElement("style");
     style.id = "peek-popup-style";
     style.textContent = `
+      .peek-popup {
+        position: fixed;
+        z-index: 2147483647;
+        display: none;
+        width: min(460px, calc(100vw - 24px));
+        min-width: 320px;
+        padding: 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+        color: #0f172a;
+        font-family: "Segoe UI", "SF Pro Text", -apple-system, BlinkMacSystemFont, sans-serif;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.16);
+        pointer-events: auto;
+      }
+
+      .peek-header {
+        font-size: 14px;
+        font-weight: 650;
+        letter-spacing: 0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .peek-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        min-height: 28px;
+      }
+
+      .peek-action-btn {
+        border: 1px solid rgba(59, 130, 246, 0.28);
+        background: #eff6ff;
+        color: #1e3a8a;
+        padding: 5px 10px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        line-height: 1.25;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+      }
+
+      .peek-action-btn:hover {
+        background: #dbeafe;
+        border-color: rgba(37, 99, 235, 0.45);
+      }
+
+      .peek-action-btn:active {
+        transform: translateY(1px);
+      }
+
+      .peek-action-btn:disabled {
+        opacity: 0.72;
+        cursor: default;
+      }
+
+      .peek-definition {
+        margin-top: 10px;
+        padding-top: 8px;
+        border-top: 1px solid rgba(148, 163, 184, 0.28);
+        font-size: 12px;
+        line-height: 1.45;
+        color: #334155;
+        display: none;
+      }
+
+      .peek-result-source {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        font-weight: 650;
+        color: #0f172a;
+      }
+
+      .peek-result-text {
+        white-space: pre-line;
+        margin-top: 6px;
+      }
+
+      .peek-result-links {
+        margin-top: 8px;
+        display: none;
+        grid-template-columns: 1fr;
+        gap: 4px;
+        font-size: 11px;
+      }
+
       @keyframes peekShimmer {
         0% { background-position: 200% 0; }
         100% { background-position: -200% 0; }
@@ -68,6 +153,14 @@
       .peek-result-link:hover {
         text-decoration: underline;
       }
+
+      @media (max-width: 420px) {
+        .peek-popup {
+          min-width: 0;
+          width: calc(100vw - 16px);
+          padding: 10px;
+        }
+      }
     `;
 
     document.head.appendChild(style);
@@ -80,64 +173,31 @@
 
     const popup = document.createElement("div");
     popup.id = "peek-selection-popup";
+    popup.className = "peek-popup";
     popup.setAttribute("aria-hidden", "true");
-    popup.style.position = "fixed";
-    popup.style.zIndex = "2147483647";
-    popup.style.display = "none";
-    popup.style.maxWidth = "420px";
-    popup.style.minWidth = "300px";
-    popup.style.padding = "12px";
-    popup.style.borderRadius = "12px";
-    popup.style.border = "1px solid rgba(0, 0, 0, 0.12)";
-    popup.style.background = "#ffffff";
-    popup.style.color = "#1f2937";
-    popup.style.fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
-    popup.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.14)";
-    popup.style.pointerEvents = "auto";
 
     const header = document.createElement("div");
-    header.style.fontSize = "13px";
-    header.style.fontWeight = "600";
-    header.style.whiteSpace = "nowrap";
-    header.style.overflow = "hidden";
-    header.style.textOverflow = "ellipsis";
+    header.className = "peek-header";
     header.textContent = "Selection";
 
     const actions = document.createElement("div");
-    actions.style.display = "flex";
-    actions.style.flexWrap = "wrap";
-    actions.style.gap = "6px";
-    actions.style.marginTop = "6px";
-    actions.style.minHeight = "24px";
+    actions.className = "peek-actions";
 
     const copyButton = createActionButton("Copy", "copy");
 
     actions.append(copyButton);
 
     const definition = document.createElement("div");
-    definition.style.marginTop = "8px";
-    definition.style.fontSize = "12px";
-    definition.style.lineHeight = "1.35";
-    definition.style.color = "#334155";
-    definition.style.display = "none";
+    definition.className = "peek-definition";
 
     const resultSource = document.createElement("div");
-    resultSource.style.display = "flex";
-    resultSource.style.alignItems = "center";
-    resultSource.style.gap = "6px";
-    resultSource.style.fontSize = "11px";
-    resultSource.style.fontWeight = "600";
-    resultSource.style.color = "#0f172a";
+    resultSource.className = "peek-result-source";
 
     const resultText = document.createElement("div");
-    resultText.style.whiteSpace = "pre-line";
+    resultText.className = "peek-result-text";
 
     const resultLinks = document.createElement("div");
-    resultLinks.style.marginTop = "8px";
-    resultLinks.style.display = "none";
-    resultLinks.style.gridTemplateColumns = "1fr";
-    resultLinks.style.gap = "4px";
-    resultLinks.style.fontSize = "11px";
+    resultLinks.className = "peek-result-links";
 
     const skeleton = document.createElement("div");
     skeleton.style.display = "none";
