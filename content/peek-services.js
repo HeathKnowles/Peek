@@ -19,6 +19,23 @@
     return text.replace(/\s+/g, " ").trim();
   }
 
+  function stripHtmlTags(text) {
+    if (!text) {
+      return "";
+    }
+
+    return normalizeInline(text.replace(/<[^>]*>/g, " "));
+  }
+
+  function toWikipediaUrl(title) {
+    const normalized = normalizeInline(title).replace(/\s+/g, "_");
+    if (!normalized) {
+      return "";
+    }
+
+    return `https://en.wikipedia.org/wiki/${encodeURIComponent(normalized)}`;
+  }
+
   function isDisambiguationSummary(text) {
     const value = normalizeInline(text).toLowerCase();
     if (!value) {
@@ -64,13 +81,6 @@
     }
 
     const directSummary = await fetchWikipediaPageSummary(text);
-    if (directSummary && !isDisambiguationSummary(directSummary.summary)) {
-      return {
-        ok: true,
-        title: directSummary.title,
-        message: directSummary.summary,
-      };
-    }
 
     const endpoint = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(text)}&srlimit=5&format=json&origin=*`;
 
@@ -86,6 +96,47 @@
         return { ok: false, message: "No Wikipedia summary found." };
       }
 
+      const disambiguationCandidates = searchResults.slice(0, 5).map((item) => {
+        const title = normalizeInline(item?.title);
+        return {
+          title,
+          snippet: trimText(stripHtmlTags(item?.snippet), 120),
+          url: toWikipediaUrl(title),
+        };
+      }).filter((item) => item.title && item.url);
+
+      if (directSummary && !isDisambiguationSummary(directSummary.summary)) {
+        const disambiguationLines = disambiguationCandidates
+          .filter((item) => item.title !== directSummary.title)
+          .slice(0, 4)
+          .map((item, index) => `${index + 1}. ${item.title}${item.snippet ? ` - ${item.snippet}` : ""}`);
+
+        const details = disambiguationLines.length > 0
+          ? `${directSummary.summary}\n\nPossible disambiguations:\n${disambiguationLines.join("\n")}`
+          : directSummary.summary;
+
+        const links = [
+          {
+            label: `Wikipedia: ${directSummary.title}`,
+            url: toWikipediaUrl(directSummary.title),
+          },
+          ...disambiguationCandidates
+            .filter((item) => item.title !== directSummary.title)
+            .slice(0, 4)
+            .map((item) => ({
+              label: `Alt: ${item.title}`,
+              url: item.url,
+            })),
+        ];
+
+        return {
+          ok: true,
+          title: directSummary.title,
+          message: details,
+          links,
+        };
+      }
+
       const candidateSummaries = [];
       for (let i = 0; i < searchResults.length; i += 1) {
         const title = searchResults[i]?.title;
@@ -99,10 +150,34 @@
         }
 
         if (!isDisambiguationSummary(summaryFromSearch.summary)) {
+          const links = [
+            {
+              label: `Wikipedia: ${summaryFromSearch.title}`,
+              url: toWikipediaUrl(summaryFromSearch.title),
+            },
+            ...disambiguationCandidates
+              .filter((item) => item.title !== summaryFromSearch.title)
+              .slice(0, 4)
+              .map((item) => ({
+                label: `Alt: ${item.title}`,
+                url: item.url,
+              })),
+          ];
+
+          const disambiguationLines = disambiguationCandidates
+            .filter((item) => item.title !== summaryFromSearch.title)
+            .slice(0, 4)
+            .map((item, index) => `${index + 1}. ${item.title}${item.snippet ? ` - ${item.snippet}` : ""}`);
+
+          const details = disambiguationLines.length > 0
+            ? `${summaryFromSearch.summary}\n\nPossible disambiguations:\n${disambiguationLines.join("\n")}`
+            : summaryFromSearch.summary;
+
           return {
             ok: true,
             title: summaryFromSearch.title,
-            message: summaryFromSearch.summary,
+            message: details,
+            links,
           };
         }
 
@@ -117,10 +192,16 @@
         return `${index + 1}. ${item.title} - ${trimText(item.summary, 120)}`;
       });
 
+      const links = candidateSummaries.slice(0, 5).map((item) => ({
+        label: `Wikipedia: ${item.title}`,
+        url: toWikipediaUrl(item.title),
+      }));
+
       return {
         ok: true,
         title: text,
         message: `Possible meanings:\n${concreteOptions.join("\n")}`,
+        links,
       };
     } catch {
       return { ok: false, message: "Wikipedia request failed." };
@@ -180,6 +261,12 @@
       return {
         ok: true,
         message: trimText(fullText, 520),
+        links: Array.isArray(entry?.sourceUrls)
+          ? entry.sourceUrls.slice(0, 2).map((url, index) => ({
+            label: `Dictionary source ${index + 1}`,
+            url,
+          }))
+          : [],
       };
     } catch {
       return { ok: false, message: "Dictionary request failed." };
@@ -201,19 +288,39 @@
     }
 
     const parts = [];
+    const links = [];
     if (wikiResult.ok) {
       const titlePrefix = wikiResult.title ? `${wikiResult.title}\n` : "";
       parts.push(`${titlePrefix}${wikiResult.message}`);
+      if (Array.isArray(wikiResult.links)) {
+        links.push(...wikiResult.links);
+      }
     }
 
     if (dictionaryResult.ok) {
       parts.push(`${dictionaryResult.message}`);
+      if (Array.isArray(dictionaryResult.links)) {
+        links.push(...dictionaryResult.links);
+      }
+    }
+
+    const uniqueLinks = [];
+    const seen = new Set();
+    for (let i = 0; i < links.length; i += 1) {
+      const item = links[i];
+      if (!item?.url || seen.has(item.url)) {
+        continue;
+      }
+
+      seen.add(item.url);
+      uniqueLinks.push(item);
     }
 
     return {
       ok: true,
       source: dictionaryResult.ok ? "combined" : "wikipedia",
       message: parts.join("\n\n"),
+      links: uniqueLinks.slice(0, 6),
     };
   }
 

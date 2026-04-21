@@ -12,6 +12,7 @@
       definitionEl: null,
       resultSourceEl: null,
       resultTextEl: null,
+      resultLinksEl: null,
       skeletonEl: null,
       loadingTimerId: null,
       searchButtonEl: null,

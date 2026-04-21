@@ -59,6 +59,15 @@
         background-size: 200% 100%;
         animation: peekShimmer 1.1s linear infinite;
       }
+
+      .peek-result-link {
+        color: #1d4ed8;
+        text-decoration: none;
+      }
+
+      .peek-result-link:hover {
+        text-decoration: underline;
+      }
     `;
 
     document.head.appendChild(style);
@@ -123,6 +132,13 @@
     const resultText = document.createElement("div");
     resultText.style.whiteSpace = "pre-line";
 
+    const resultLinks = document.createElement("div");
+    resultLinks.style.marginTop = "8px";
+    resultLinks.style.display = "none";
+    resultLinks.style.gridTemplateColumns = "1fr";
+    resultLinks.style.gap = "4px";
+    resultLinks.style.fontSize = "11px";
+
     const skeleton = document.createElement("div");
     skeleton.style.display = "none";
     skeleton.style.marginTop = "6px";
@@ -137,7 +153,7 @@
     skeletonLineTwo.style.width = "82%";
 
     skeleton.append(skeletonLineOne, skeletonLineTwo);
-    definition.append(resultSource, resultText, skeleton);
+    definition.append(resultSource, resultText, resultLinks, skeleton);
     popup.append(header, actions, definition);
     document.documentElement.appendChild(popup);
 
@@ -147,6 +163,7 @@
     state.definitionEl = definition;
     state.resultSourceEl = resultSource;
     state.resultTextEl = resultText;
+    state.resultLinksEl = resultLinks;
     state.skeletonEl = skeleton;
     state.searchButtonEl = null;
     state.dictionaryButtonEl = null;
@@ -199,13 +216,15 @@
   }
 
   function resetResult(state) {
-    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.skeletonEl) {
+    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.resultLinksEl || !state.skeletonEl) {
       return;
     }
 
     state.resultSourceEl.replaceChildren();
     state.resultTextEl.textContent = "";
     state.resultTextEl.style.display = "block";
+    state.resultLinksEl.replaceChildren();
+    state.resultLinksEl.style.display = "none";
     state.skeletonEl.style.display = "none";
     state.definitionEl.style.display = "none";
   }
@@ -224,8 +243,8 @@
     setButtonsBusy(state, "", false);
   }
 
-  function setResult(state, source, text) {
-    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.skeletonEl) {
+  function setResult(state, source, text, links = []) {
+    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.resultLinksEl || !state.skeletonEl) {
       return;
     }
 
@@ -240,6 +259,28 @@
     state.resultTextEl.style.display = "block";
     state.skeletonEl.style.display = "none";
     state.resultTextEl.textContent = text;
+
+    state.resultLinksEl.replaceChildren();
+    const safeLinks = Array.isArray(links) ? links : [];
+    if (safeLinks.length > 0) {
+      safeLinks.forEach((item) => {
+        if (!item?.url) {
+          return;
+        }
+
+        const anchor = document.createElement("a");
+        anchor.href = item.url;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+        anchor.className = "peek-result-link";
+        anchor.textContent = item.label || item.url;
+        state.resultLinksEl.append(anchor);
+      });
+      state.resultLinksEl.style.display = state.resultLinksEl.childElementCount > 0 ? "grid" : "none";
+    } else {
+      state.resultLinksEl.style.display = "none";
+    }
+
     state.definitionEl.style.display = "block";
   }
 

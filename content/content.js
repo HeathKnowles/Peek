@@ -79,7 +79,7 @@
       return;
     }
 
-    setResult(state, source, text);
+    setResult(state, source, text, []);
   }
 
   async function runInsightsAction(options = {}) {
@@ -95,7 +95,7 @@
       }
 
       if (result.ok) {
-        setResult(state, result.source || "wikipedia", result.message);
+        setResult(state, result.source || "wikipedia", result.message, result.links || []);
       } else {
         clearLoadingTimer(state);
         if (!options.silentFailure) {
