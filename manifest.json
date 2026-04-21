@@ -16,6 +16,10 @@
         "<all_urls>"
       ],
       "js": [
+        "content/peek-state.js",
+        "content/peek-selection.js",
+        "content/peek-services.js",
+        "content/peek-ui.js",
         "content/content.js"
       ],
       "run_at": "document_idle"

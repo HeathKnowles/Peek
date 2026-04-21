@@ -1,0 +1,24 @@
+(() => {
+  function createState() {
+    return {
+      isVisible: false,
+      currentSelectionText: "",
+      selectionToken: 0,
+      popupEl: null,
+      headerEl: null,
+      actionsEl: null,
+      definitionEl: null,
+      resultSourceEl: null,
+      resultTextEl: null,
+      skeletonEl: null,
+      loadingTimerId: null,
+      searchButtonEl: null,
+      dictionaryButtonEl: null,
+      copyButtonEl: null,
+    };
+  }
+
+  window.PeekState = {
+    createState,
+  };
+})();
