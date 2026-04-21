@@ -4,6 +4,8 @@
       isVisible: false,
       currentSelectionText: "",
       selectionToken: 0,
+      actionToken: 0,
+      triggerTimerId: null,
       popupEl: null,
       headerEl: null,
       actionsEl: null,

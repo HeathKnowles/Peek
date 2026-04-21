@@ -19,7 +19,7 @@
   function createSourceBadge(source) {
     const fragment = document.createDocumentFragment();
 
-    if (source === "wikipedia") {
+    if (source === "wikipedia" || source === "combined") {
       const icon = document.createElement("img");
       icon.src = "https://en.wikipedia.org/static/favicon/wikipedia.ico";
       icon.alt = "Wikipedia";
@@ -28,7 +28,7 @@
       icon.style.display = "block";
 
       const label = document.createElement("span");
-      label.textContent = "Wikipedia";
+      label.textContent = source === "combined" ? "Insight" : "Wikipedia";
       fragment.append(icon, label);
       return fragment;
     }
@@ -75,10 +75,10 @@
     popup.style.position = "fixed";
     popup.style.zIndex = "2147483647";
     popup.style.display = "none";
-    popup.style.maxWidth = "260px";
-    popup.style.minWidth = "180px";
-    popup.style.padding = "8px";
-    popup.style.borderRadius = "9px";
+    popup.style.maxWidth = "420px";
+    popup.style.minWidth = "300px";
+    popup.style.padding = "12px";
+    popup.style.borderRadius = "12px";
     popup.style.border = "1px solid rgba(0, 0, 0, 0.12)";
     popup.style.background = "#ffffff";
     popup.style.color = "#1f2937";
@@ -101,11 +101,9 @@
     actions.style.marginTop = "6px";
     actions.style.minHeight = "24px";
 
-    const searchButton = createActionButton("Wikipedia", "search");
-    const dictionaryButton = createActionButton("Dictionary", "dictionary");
     const copyButton = createActionButton("Copy", "copy");
 
-    actions.append(searchButton, dictionaryButton, copyButton);
+    actions.append(copyButton);
 
     const definition = document.createElement("div");
     definition.style.marginTop = "8px";
@@ -123,6 +121,7 @@
     resultSource.style.color = "#0f172a";
 
     const resultText = document.createElement("div");
+    resultText.style.whiteSpace = "pre-line";
 
     const skeleton = document.createElement("div");
     skeleton.style.display = "none";
@@ -149,8 +148,8 @@
     state.resultSourceEl = resultSource;
     state.resultTextEl = resultText;
     state.skeletonEl = skeleton;
-    state.searchButtonEl = searchButton;
-    state.dictionaryButtonEl = dictionaryButton;
+    state.searchButtonEl = null;
+    state.dictionaryButtonEl = null;
     state.copyButtonEl = copyButton;
 
     return popup;

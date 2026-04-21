@@ -13,7 +13,6 @@
     ensurePopupStyles,
     createPopupNode,
     clearLoadingTimer,
-    setButtonsBusy,
     setSelectionText,
     showPopupAt,
     resetResult,
@@ -27,7 +26,24 @@
     getSelectionRect,
     computePopupPosition,
   } = window.PeekSelection;
-  const { fetchWikipediaSummary, fetchDictionaryDefinition } = window.PeekServices;
+  const { fetchSelectionInsights } = window.PeekServices;
+
+  function getSelectionOwnerNode() {
+    const selection = window.getSelection();
+    if (!selection) {
+      return null;
+    }
+
+    return selection.anchorNode || selection.focusNode || null;
+  }
+
+  function isNodeInsidePopup(node) {
+    if (!node || !state.popupEl) {
+      return false;
+    }
+
+    return state.popupEl.contains(node);
+  }
 
   async function handleCopyAction() {
     if (!state.currentSelectionText) {
@@ -66,49 +82,30 @@
     setResult(state, source, text);
   }
 
-  async function runWikipediaAction() {
-    const token = state.selectionToken;
-    scheduleLoadingState(state, "wikipedia", token);
-    setButtonsBusy(state, "search", true);
+  async function runInsightsAction(options = {}) {
+    const selectionToken = state.selectionToken;
+    const actionToken = state.actionToken + 1;
+    state.actionToken = actionToken;
+
+    scheduleLoadingState(state, "wikipedia", selectionToken);
     try {
-      const result = await fetchWikipediaSummary(state.currentSelectionText);
-      if (token !== state.selectionToken || !state.isVisible) {
+      const result = await fetchSelectionInsights(state.currentSelectionText);
+      if (selectionToken !== state.selectionToken || actionToken !== state.actionToken || !state.isVisible) {
         return;
       }
 
       if (result.ok) {
-        setResult(state, "wikipedia", result.message);
+        setResult(state, result.source || "wikipedia", result.message);
       } else {
         clearLoadingTimer(state);
-        setFallbackResult("wikipedia", result.message, token);
+        if (!options.silentFailure) {
+          setFallbackResult("wikipedia", result.message, selectionToken);
+        } else {
+          resetResult(state);
+        }
       }
     } finally {
-      if (token === state.selectionToken) {
-        setButtonsBusy(state, "search", false);
-      }
-    }
-  }
-
-  async function runDictionaryAction() {
-    const token = state.selectionToken;
-    scheduleLoadingState(state, "dictionary", token);
-    setButtonsBusy(state, "dictionary", true);
-    try {
-      const result = await fetchDictionaryDefinition(state.currentSelectionText);
-      if (token !== state.selectionToken || !state.isVisible) {
-        return;
-      }
-
-      if (result.ok) {
-        setResult(state, "dictionary", result.message);
-      } else {
-        clearLoadingTimer(state);
-        setFallbackResult("dictionary", result.message, token);
-      }
-    } finally {
-      if (token === state.selectionToken) {
-        setButtonsBusy(state, "dictionary", false);
-      }
+      // No-op: only copy action remains interactive.
     }
   }
 
@@ -119,38 +116,77 @@
     }
 
     const { action } = actionElement.dataset;
-    if (action === "search") {
-      runWikipediaAction();
-      return;
-    }
-
-    if (action === "dictionary") {
-      runDictionaryAction();
-      return;
-    }
-
     if (action === "copy") {
       handleCopyAction();
     }
   }
 
-  function handleSelectionTrigger(source, event) {
+  function onDocumentPointerDown(event) {
+    if (!state.isVisible) {
+      return;
+    }
+
     if (state.popupEl && state.popupEl.contains(event.target)) {
       return;
     }
 
-    const selectedText = getCurrentSelectionText();
+    clearTriggerTimer();
+    hidePopup(state);
+  }
+
+  function onAnyScroll() {
+    if (!state.isVisible) {
+      return;
+    }
+
+    clearTriggerTimer();
+    hidePopup(state);
+  }
+
+  function onKeyDown(event) {
+    if (!state.isVisible) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      clearTriggerTimer();
+      hidePopup(state);
+    }
+  }
+
+  function clearTriggerTimer() {
+    if (state.triggerTimerId === null) {
+      return;
+    }
+
+    window.clearTimeout(state.triggerTimerId);
+    state.triggerTimerId = null;
+  }
+
+  function handleSelectionTrigger(source, eventTarget, selectionSnapshot) {
+    if (state.popupEl && eventTarget && state.popupEl.contains(eventTarget)) {
+      return;
+    }
+
+    const ownerNode = getSelectionOwnerNode();
+    if (isNodeInsidePopup(ownerNode)) {
+      return;
+    }
+
+    const selectedText = selectionSnapshot?.text || getCurrentSelectionText();
     if (!shouldShowSelection(selectedText, source)) {
-      hidePopup();
+      hidePopup(state);
       return;
     }
 
     setSelectionText(state, selectedText);
     resetResult(state);
     state.selectionToken += 1;
-    setButtonsBusy(state, "", false);
+    state.actionToken += 1;
+    clearLoadingTimer(state);
+    clearTriggerTimer();
 
-    const selectionRect = getSelectionRect();
+    const selectionRect = selectionSnapshot?.rect || getSelectionRect();
     if (!selectionRect) {
       hidePopup(state);
       return;
@@ -162,32 +198,64 @@
 
     // Show UI first, then fetch definition asynchronously.
     window.setTimeout(() => {
-      runDictionaryAction();
+      runInsightsAction({ silentFailure: true });
     }, 0);
+  }
+
+  function queueSelectionTrigger(source, event) {
+    clearTriggerTimer();
+    const eventTarget = event?.target || getSelectionOwnerNode() || document.body;
+    const selectionSnapshot = {
+      text: getCurrentSelectionText(),
+      rect: getSelectionRect(),
+    };
+    const delay = source === "dblclick" ? 8 : source === "selectionchange" ? 40 : 32;
+    state.triggerTimerId = window.setTimeout(() => {
+      state.triggerTimerId = null;
+      handleSelectionTrigger(source, eventTarget, selectionSnapshot);
+    }, delay);
   }
 
   function onMouseUp(event) {
-    window.setTimeout(() => {
-      handleSelectionTrigger("mouseup", event);
-    }, 0);
+    queueSelectionTrigger("mouseup", event);
   }
 
   function onDoubleClick(event) {
-    window.setTimeout(() => {
-      handleSelectionTrigger("dblclick", event);
-    }, 0);
+    queueSelectionTrigger("dblclick", event);
+  }
+
+  function onSelectionChange() {
+    const text = getCurrentSelectionText();
+    if (!text) {
+      if (state.isVisible) {
+        hidePopup(state);
+      }
+      return;
+    }
+
+    const ownerNode = getSelectionOwnerNode();
+    if (isNodeInsidePopup(ownerNode)) {
+      return;
+    }
+
+    // Fallback trigger path for pages where mouse events are unreliable.
+    queueSelectionTrigger("selectionchange", { target: ownerNode || document.body });
   }
 
   // Expose a lightweight debug API for upcoming steps.
   window.__peek = {
     state,
-    runWikipediaAction,
-    runDictionaryAction,
+    runInsightsAction,
+    status: "ready",
   };
 
   createPopupNode(state);
   ensurePopupStyles();
   state.popupEl.addEventListener("click", onPopupClick);
+  document.addEventListener("pointerdown", onDocumentPointerDown, true);
+  document.addEventListener("scroll", onAnyScroll, true);
+  document.addEventListener("keydown", onKeyDown, true);
   document.addEventListener("mouseup", onMouseUp);
   document.addEventListener("dblclick", onDoubleClick);
+  document.addEventListener("selectionchange", onSelectionChange);
 })();
