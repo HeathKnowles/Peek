@@ -3,8 +3,20 @@
   "name": "Peek Selection Popup",
   "version": "0.1.0",
   "description": "Safari-like quick popup for short text selections.",
+  "icons": {
+    "16": "logo.png",
+    "32": "logo.png",
+    "48": "logo.png",
+    "128": "logo.png"
+  },
   "action": {
-    "default_title": "Peek"
+    "default_title": "Peek",
+    "default_icon": {
+      "16": "logo.png",
+      "32": "logo.png",
+      "48": "logo.png",
+      "128": "logo.png"
+    }
   },
   "permissions": [],
   "host_permissions": [
