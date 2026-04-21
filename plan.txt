@@ -1,0 +1,58 @@
+Building a Safari Search like extension
+
+1. Trigger logic
+Fires on text selection
+Prefer:
+double-click OR
+short selection (1–3 words)
+Ignore:
+long paragraphs (nobody wants a popup essay)
+empty/whitespace selections
+2. Popup behavior
+Appears near selection (bottom-right or above)
+Disappears when:
+user clicks elsewhere
+user scrolls
+user presses Esc
+
+Keep it:
+
+lightweight
+no animation lag
+no layout shift
+3. Content inside popup (keep it brutally minimal)
+
+Only include:
+
+Selected text (header)
+2–3 quick actions
+Search (Google)
+Open in new tab
+Copy
+
+Optional but still “base”:
+
+Short definition (1–2 lines) from a dictionary API
+
+That’s it.
+
+If you add more here, it stops being “Safari-like” and starts being “random startup extension #4821”.
+
+4. Positioning logic
+Anchor to selection bounding box
+Adjust if near screen edges:
+flip above if bottom overflows
+shift left if off-screen
+
+If you skip this, your popup will happily render off-screen like it’s trying to escape responsibility.
+
+5. Performance constraints (non-negotiable)
+Popup render time: <50ms
+No heavy frameworks in content script
+No blocking network calls before UI shows
+
+Show UI first → fetch later.
+
+6. State handling
+Only one popup at a time
+Reuse DOM node (don’t recreate every time like a rookie)
