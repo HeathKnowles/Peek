@@ -16,7 +16,6 @@
       skeletonEl: null,
       loadingTimerId: null,
       searchButtonEl: null,
-      dictionaryButtonEl: null,
       copyButtonEl: null,
     };
   }

@@ -6,7 +6,12 @@
 
 Peek is a lightweight extension that shows a small smart popup when you select text.
 
-It combines Wikipedia context and dictionary meanings in one place, with source links and quick copy.
+It combines multiple quick-reference sources in one place, with source links and quick copy:
+
+- Wikipedia (summary)
+- Wiktionary (definitions)
+- DuckDuckGo Instant Answers
+- Stack Overflow (for technical terms)
 
 ## Install
 

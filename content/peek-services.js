@@ -27,6 +27,14 @@
     return normalizeInline(text.replace(/<[^>]*>/g, " "));
   }
 
+  function cleanTextForMessage(text) {
+    if (!text) {
+      return "";
+    }
+
+    return normalizeInline(stripHtmlTags(text));
+  }
+
   function toWikipediaUrl(title) {
     const normalized = normalizeInline(title).replace(/\s+/g, "_");
     if (!normalized) {
@@ -208,82 +216,190 @@
     }
   }
 
-  async function fetchDictionaryDefinition(text) {
+  async function fetchWiktionaryDefinition(text) {
     const words = text.split(" ").filter(Boolean);
     if (words.length !== 1) {
-      return { ok: false, message: "Dictionary works best with one word." };
+      return { ok: false, message: "Wiktionary works best with one word." };
     }
 
     const word = words[0];
-    const endpoint = `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`;
+    const endpoint = `https://en.wiktionary.org/w/api.php?action=query&prop=extracts&explaintext=1&exintro=1&redirects=1&titles=${encodeURIComponent(word)}&format=json&origin=*`;
 
     try {
       const response = await fetch(endpoint, { method: "GET" });
       if (!response.ok) {
-        return { ok: false, message: "Dictionary result unavailable." };
+        return { ok: false, message: "Wiktionary result unavailable." };
       }
 
       const data = await response.json();
-      const entry = Array.isArray(data) ? data[0] : null;
-      const meanings = Array.isArray(entry?.meanings) ? entry.meanings : [];
-      if (meanings.length === 0) {
-        return { ok: false, message: "No dictionary definition found." };
+      const pages = data?.query?.pages || {};
+      const firstPage = Object.values(pages)[0];
+      const title = normalizeInline(firstPage?.title) || word;
+      const extract = cleanTextForMessage(firstPage?.extract);
+      if (!extract) {
+        return { ok: false, message: "No Wiktionary definition found." };
       }
 
-      const topMeanings = meanings.slice(0, 3);
-      const formattedMeaningLines = [];
-
-      for (let i = 0; i < topMeanings.length; i += 1) {
-        const meaning = topMeanings[i];
-        const partOfSpeech = normalizeInline(meaning?.partOfSpeech) || "meaning";
-        const definitions = Array.isArray(meaning?.definitions) ? meaning.definitions : [];
-        const topDefinitions = definitions
-          .map((item) => normalizeInline(item?.definition))
-          .filter(Boolean)
-          .slice(0, 2);
-
-        if (topDefinitions.length === 0) {
-          continue;
-        }
-
-        const joinedDefinitions = topDefinitions.join("; ");
-        formattedMeaningLines.push(`${i + 1}. (${partOfSpeech}) ${joinedDefinitions}`);
-      }
-
-      if (formattedMeaningLines.length === 0) {
-        return { ok: false, message: "No dictionary definition found." };
-      }
-
-      const pronunciation = normalizeInline(entry?.phonetic || entry?.phonetics?.[0]?.text);
-      const prefix = pronunciation ? `Pronunciation: ${pronunciation}\n` : "";
-      const fullText = `${prefix}${formattedMeaningLines.join("\n")}`;
+      const firstLines = extract
+        .split("\n")
+        .map((line) => normalizeInline(line))
+        .filter(Boolean)
+        .slice(0, 4)
+        .join("\n");
 
       return {
         ok: true,
-        message: trimText(fullText, 520),
-        links: Array.isArray(entry?.sourceUrls)
-          ? entry.sourceUrls.slice(0, 2).map((url, index) => ({
-            label: `Dictionary source ${index + 1}`,
-            url,
-          }))
-          : [],
+        title,
+        message: trimText(firstLines || extract, 420),
+        links: [
+          {
+            label: `Wiktionary: ${title}`,
+            url: `https://en.wiktionary.org/wiki/${encodeURIComponent(title)}`,
+          },
+        ],
       };
     } catch {
-      return { ok: false, message: "Dictionary request failed." };
+      return { ok: false, message: "Wiktionary request failed." };
+    }
+  }
+
+  function getDuckDuckGoText(data) {
+    const abstractText = cleanTextForMessage(data?.AbstractText);
+    if (abstractText) {
+      return abstractText;
+    }
+
+    const definition = cleanTextForMessage(data?.Definition);
+    if (definition) {
+      return definition;
+    }
+
+    const answer = cleanTextForMessage(data?.Answer);
+    if (answer) {
+      return answer;
+    }
+
+    const relatedTopics = Array.isArray(data?.RelatedTopics) ? data.RelatedTopics : [];
+    const flattened = [];
+    for (let i = 0; i < relatedTopics.length; i += 1) {
+      const topic = relatedTopics[i];
+      if (topic?.Text) {
+        flattened.push(cleanTextForMessage(topic.Text));
+        continue;
+      }
+
+      const nested = Array.isArray(topic?.Topics) ? topic.Topics : [];
+      for (let j = 0; j < nested.length; j += 1) {
+        const itemText = cleanTextForMessage(nested[j]?.Text);
+        if (itemText) {
+          flattened.push(itemText);
+        }
+      }
+    }
+
+    return flattened.slice(0, 2).join("\n") || "";
+  }
+
+  async function fetchDuckDuckGoInstantAnswer(text) {
+    if (!text) {
+      return { ok: false, message: "No text selected." };
+    }
+
+    const endpoint = `https://api.duckduckgo.com/?q=${encodeURIComponent(text)}&format=json&no_redirect=1&no_html=1&skip_disambig=1`;
+
+    try {
+      const response = await fetch(endpoint, { method: "GET" });
+      if (!response.ok) {
+        return { ok: false, message: "DuckDuckGo result unavailable." };
+      }
+
+      const data = await response.json();
+      const message = getDuckDuckGoText(data);
+      if (!message) {
+        return { ok: false, message: "No DuckDuckGo instant answer found." };
+      }
+
+      const links = [];
+      if (data?.AbstractURL) {
+        links.push({ label: "DuckDuckGo source", url: data.AbstractURL });
+      }
+      links.push({ label: "DuckDuckGo search", url: `https://duckduckgo.com/?q=${encodeURIComponent(text)}` });
+
+      return {
+        ok: true,
+        message: trimText(message, 360),
+        links,
+      };
+    } catch {
+      return { ok: false, message: "DuckDuckGo request failed." };
+    }
+  }
+
+  async function fetchStackOverflowTermInsight(text) {
+    if (!text) {
+      return { ok: false, message: "No text selected." };
+    }
+
+    const endpoint = `https://api.stackexchange.com/2.3/search/excerpts?order=desc&sort=relevance&q=${encodeURIComponent(text)}&site=stackoverflow&pagesize=3`;
+
+    try {
+      const response = await fetch(endpoint, { method: "GET" });
+      if (!response.ok) {
+        return { ok: false, message: "Stack Overflow result unavailable." };
+      }
+
+      const data = await response.json();
+      const items = Array.isArray(data?.items) ? data.items : [];
+      if (items.length === 0) {
+        return { ok: false, message: "No Stack Overflow matches found." };
+      }
+
+      const lines = [];
+      const links = [];
+      for (let i = 0; i < items.length && lines.length < 2; i += 1) {
+        const item = items[i];
+        const title = cleanTextForMessage(item?.title);
+        const excerpt = cleanTextForMessage(item?.excerpt || item?.body);
+        if (!title || !excerpt) {
+          continue;
+        }
+
+        lines.push(`${lines.length + 1}. ${title} - ${trimText(excerpt, 170)}`);
+        if (item?.link) {
+          links.push({
+            label: `Stack Overflow: ${trimText(title, 56)}`,
+            url: item.link,
+          });
+        }
+      }
+
+      if (lines.length === 0) {
+        return { ok: false, message: "No Stack Overflow matches found." };
+      }
+
+      return {
+        ok: true,
+        message: lines.join("\n"),
+        links,
+      };
+    } catch {
+      return { ok: false, message: "Stack Overflow request failed." };
     }
   }
 
   async function fetchSelectionInsights(text) {
-    const [wikiResult, dictionaryResult] = await Promise.all([
+    const [wikiResult, wiktionaryResult, duckDuckGoResult, stackOverflowResult] = await Promise.all([
       fetchWikipediaSummary(text),
-      fetchDictionaryDefinition(text),
+      fetchWiktionaryDefinition(text),
+      fetchDuckDuckGoInstantAnswer(text),
+      fetchStackOverflowTermInsight(text),
     ]);
 
-    if (!wikiResult.ok && !dictionaryResult.ok) {
+    if (!wikiResult.ok && !wiktionaryResult.ok && !duckDuckGoResult.ok && !stackOverflowResult.ok) {
       return {
         ok: false,
         source: "wikipedia",
-        message: wikiResult.message || dictionaryResult.message,
+        message: wikiResult.message || wiktionaryResult.message || duckDuckGoResult.message || stackOverflowResult.message,
       };
     }
 
@@ -291,16 +407,30 @@
     const links = [];
     if (wikiResult.ok) {
       const titlePrefix = wikiResult.title ? `${wikiResult.title}\n` : "";
-      parts.push(`${titlePrefix}${wikiResult.message}`);
+      parts.push(`Wikipedia\n${titlePrefix}${wikiResult.message}`);
       if (Array.isArray(wikiResult.links)) {
         links.push(...wikiResult.links);
       }
     }
 
-    if (dictionaryResult.ok) {
-      parts.push(`${dictionaryResult.message}`);
-      if (Array.isArray(dictionaryResult.links)) {
-        links.push(...dictionaryResult.links);
+    if (wiktionaryResult.ok) {
+      parts.push(`Wiktionary\n${wiktionaryResult.message}`);
+      if (Array.isArray(wiktionaryResult.links)) {
+        links.push(...wiktionaryResult.links);
+      }
+    }
+
+    if (duckDuckGoResult.ok) {
+      parts.push(`DuckDuckGo Instant Answer\n${duckDuckGoResult.message}`);
+      if (Array.isArray(duckDuckGoResult.links)) {
+        links.push(...duckDuckGoResult.links);
+      }
+    }
+
+    if (stackOverflowResult.ok) {
+      parts.push(`Stack Overflow\n${stackOverflowResult.message}`);
+      if (Array.isArray(stackOverflowResult.links)) {
+        links.push(...stackOverflowResult.links);
       }
     }
 
@@ -318,15 +448,17 @@
 
     return {
       ok: true,
-      source: dictionaryResult.ok ? "combined" : "wikipedia",
+      source: "combined",
       message: parts.join("\n\n"),
-      links: uniqueLinks.slice(0, 6),
+      links: uniqueLinks.slice(0, 8),
     };
   }
 
   window.PeekServices = {
     fetchWikipediaSummary,
-    fetchDictionaryDefinition,
+    fetchWiktionaryDefinition,
+    fetchDuckDuckGoInstantAnswer,
+    fetchStackOverflowTermInsight,
     fetchSelectionInsights,
   };
 })();

@@ -226,7 +226,6 @@
     state.resultLinksEl = resultLinks;
     state.skeletonEl = skeleton;
     state.searchButtonEl = null;
-    state.dictionaryButtonEl = null;
     state.copyButtonEl = copyButton;
 
     return popup;
@@ -242,7 +241,7 @@
   }
 
   function setButtonsBusy(state, activeAction, isBusy) {
-    const controls = [state.searchButtonEl, state.dictionaryButtonEl, state.copyButtonEl];
+    const controls = [state.searchButtonEl, state.copyButtonEl];
     controls.forEach((button) => {
       if (!button) {
         return;
