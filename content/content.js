@@ -87,6 +87,14 @@
     const actionToken = state.actionToken + 1;
     state.actionToken = actionToken;
 
+    // First, try to render the selected text as an image
+    const isImageShown = window.PeekUI.tryRenderImageFromText(state, state.currentSelectionText);
+    
+    if (isImageShown) {
+      // If it's an image, don't fetch insights
+      return;
+    }
+
     scheduleLoadingState(state, "wikipedia", selectionToken);
     try {
       const result = await fetchSelectionInsights(state.currentSelectionText);

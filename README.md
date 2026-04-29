@@ -4,7 +4,17 @@
 
 # Peek Selection Popup
 
-Peek is a lightweight extension that shows a small smart popup when you select text.
+Peek at anything
+
+This is a lightweight extension that shows a small smart popup when you select anything...From Images to Text to Google Forms..anything
+
+
+Currently supported:
+Text
+Images
+
+To be Added:
+Forms
 
 It combines multiple quick-reference sources in one place, with source links and quick copy:
 

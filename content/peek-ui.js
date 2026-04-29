@@ -8,29 +8,6 @@
     return button;
   }
 
-  function createSourceBadge(source) {
-    const fragment = document.createDocumentFragment();
-
-    if (source === "wikipedia" || source === "combined") {
-      const icon = document.createElement("img");
-      icon.src = "https://en.wikipedia.org/static/favicon/wikipedia.ico";
-      icon.alt = "Wikipedia";
-      icon.width = 14;
-      icon.height = 14;
-      icon.style.display = "block";
-
-      const label = document.createElement("span");
-      label.textContent = source === "combined" ? "Insight" : "Wikipedia";
-      fragment.append(icon, label);
-      return fragment;
-    }
-
-    const label = document.createElement("span");
-    label.textContent = "Dictionary";
-    fragment.append(label);
-    return fragment;
-  }
-
   function ensurePopupStyles() {
     if (document.getElementById("peek-popup-style")) {
       return;
@@ -100,58 +77,17 @@
         cursor: default;
       }
 
-      .peek-definition {
+      .peek-render-container {
         margin-top: 10px;
-        padding-top: 8px;
-        border-top: 1px solid rgba(148, 163, 184, 0.28);
-        font-size: 12px;
-        line-height: 1.45;
-        color: #334155;
         display: none;
       }
 
-      .peek-result-source {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 11px;
-        font-weight: 650;
-        color: #0f172a;
-      }
-
-      .peek-result-text {
-        white-space: pre-line;
-        margin-top: 6px;
-      }
-
-      .peek-result-links {
-        margin-top: 8px;
-        display: none;
-        grid-template-columns: 1fr;
-        gap: 4px;
-        font-size: 11px;
-      }
-
-      @keyframes peekShimmer {
-        0% { background-position: 200% 0; }
-        100% { background-position: -200% 0; }
-      }
-
-      .peek-skeleton-bar {
-        height: 8px;
-        border-radius: 6px;
-        background: linear-gradient(90deg, #e2e8f0 20%, #f1f5f9 45%, #e2e8f0 70%);
-        background-size: 200% 100%;
-        animation: peekShimmer 1.1s linear infinite;
-      }
-
-      .peek-result-link {
-        color: #1d4ed8;
-        text-decoration: none;
-      }
-
-      .peek-result-link:hover {
-        text-decoration: underline;
+      .peek-render-image {
+        width: 100%;
+        display: block;
+        border-radius: 10px;
+        border: 1px solid rgba(148, 163, 184, 0.28);
+        object-fit: contain;
       }
 
       @media (max-width: 420px) {
@@ -187,44 +123,22 @@
 
     actions.append(copyButton);
 
-    const definition = document.createElement("div");
-    definition.className = "peek-definition";
+    const renderContainer = document.createElement("div");
+    renderContainer.className = "peek-render-container";
 
-    const resultSource = document.createElement("div");
-    resultSource.className = "peek-result-source";
+    const renderImage = document.createElement("img");
+    renderImage.className = "peek-render-image";
+    renderImage.alt = "Peek result";
 
-    const resultText = document.createElement("div");
-    resultText.className = "peek-result-text";
-
-    const resultLinks = document.createElement("div");
-    resultLinks.className = "peek-result-links";
-
-    const skeleton = document.createElement("div");
-    skeleton.style.display = "none";
-    skeleton.style.marginTop = "6px";
-    skeleton.style.gap = "6px";
-
-    const skeletonLineOne = document.createElement("div");
-    skeletonLineOne.className = "peek-skeleton-bar";
-    skeletonLineOne.style.width = "100%";
-
-    const skeletonLineTwo = document.createElement("div");
-    skeletonLineTwo.className = "peek-skeleton-bar";
-    skeletonLineTwo.style.width = "82%";
-
-    skeleton.append(skeletonLineOne, skeletonLineTwo);
-    definition.append(resultSource, resultText, resultLinks, skeleton);
-    popup.append(header, actions, definition);
+    renderContainer.append(renderImage);
+    popup.append(header, actions, renderContainer);
     document.documentElement.appendChild(popup);
 
     state.popupEl = popup;
     state.headerEl = header;
     state.actionsEl = actions;
-    state.definitionEl = definition;
-    state.resultSourceEl = resultSource;
-    state.resultTextEl = resultText;
-    state.resultLinksEl = resultLinks;
-    state.skeletonEl = skeleton;
+    state.renderContainerEl = renderContainer;
+    state.renderImageEl = renderImage;
     state.searchButtonEl = null;
     state.copyButtonEl = copyButton;
 
@@ -274,18 +188,66 @@
     state.isVisible = true;
   }
 
-  function resetResult(state) {
-    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.resultLinksEl || !state.skeletonEl) {
+  function showImage(state, imageUrl) {
+    if (!state.renderContainerEl || !state.renderImageEl) {
       return;
     }
 
-    state.resultSourceEl.replaceChildren();
-    state.resultTextEl.textContent = "";
-    state.resultTextEl.style.display = "block";
-    state.resultLinksEl.replaceChildren();
-    state.resultLinksEl.style.display = "none";
-    state.skeletonEl.style.display = "none";
-    state.definitionEl.style.display = "none";
+    clearLoadingTimer(state);
+    
+    // Clear any previous content and show the image
+    state.renderContainerEl.replaceChildren(state.renderImageEl);
+    state.renderContainerEl.style.display = "block";
+    state.renderImageEl.src = imageUrl;
+    
+    // Handle image loading errors
+    state.renderImageEl.onerror = function() {
+      const errorElement = document.createElement("div");
+      errorElement.style.padding = "10px";
+      errorElement.style.backgroundColor = "#fef2f2";
+      errorElement.style.borderRadius = "8px";
+      errorElement.style.border = "1px solid rgba(239, 68, 68, 0.28)";
+      errorElement.style.fontSize = "12px";
+      errorElement.style.lineHeight = "1.4";
+      errorElement.style.color = "#dc2626";
+      errorElement.style.marginTop = "8px";
+      errorElement.textContent = "Could not load image";
+      state.renderContainerEl.replaceChildren(errorElement);
+    };
+  }
+
+  function tryRenderImageFromText(state, text) {
+    if (!text) {
+      return false;
+    }
+
+    let url;
+    try {
+      url = new URL(text.trim());
+    } catch {
+      return false;
+    }
+
+    // Check if URL looks like an image based on extension
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff', '.ico'];
+    const lowerUrl = url.toString().toLowerCase();
+    const isLikelyImage = imageExtensions.some(ext => lowerUrl.endsWith(ext));
+    
+    if (!isLikelyImage) {
+      return false;
+    } else {
+      showImage(state, url.toString());
+    }
+    return true;
+  }
+
+  function resetResult(state) {
+    if (!state.renderContainerEl || !state.renderImageEl) {
+      return;
+    }
+
+    state.renderContainerEl.style.display = "none";
+    state.renderImageEl.src = "";
   }
 
   function hidePopup(state) {
@@ -303,56 +265,51 @@
   }
 
   function setResult(state, source, text, links = []) {
-    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.resultLinksEl || !state.skeletonEl) {
+    if (!state.renderContainerEl || !state.renderImageEl) {
       return;
     }
-
-    if (!text) {
-      resetResult(state);
-      return;
-    }
-
+    
+    // Clear loading timer
     clearLoadingTimer(state);
-    state.resultSourceEl.replaceChildren();
-    state.resultSourceEl.append(createSourceBadge(source));
-    state.resultTextEl.style.display = "block";
-    state.skeletonEl.style.display = "none";
-    state.resultTextEl.textContent = text;
-
-    state.resultLinksEl.replaceChildren();
-    const safeLinks = Array.isArray(links) ? links : [];
-    if (safeLinks.length > 0) {
-      safeLinks.forEach((item) => {
-        if (!item?.url) {
-          return;
-        }
-
-        const anchor = document.createElement("a");
-        anchor.href = item.url;
-        anchor.target = "_blank";
-        anchor.rel = "noopener noreferrer";
-        anchor.className = "peek-result-link";
-        anchor.textContent = item.label || item.url;
-        state.resultLinksEl.append(anchor);
-      });
-      state.resultLinksEl.style.display = state.resultLinksEl.childElementCount > 0 ? "grid" : "none";
-    } else {
-      state.resultLinksEl.style.display = "none";
-    }
-
-    state.definitionEl.style.display = "block";
+    
+    // Create a simple text display
+    // Create a text element to show the result
+    const textElement = document.createElement("div");
+    textElement.style.padding = "10px";
+    textElement.style.backgroundColor = "#f8fafc";
+    textElement.style.borderRadius = "8px";
+    textElement.style.border = "1px solid rgba(148, 163, 184, 0.28)";
+    textElement.style.fontSize = "12px";
+    textElement.style.lineHeight = "1.4";
+    textElement.style.color = "#0f172a";
+    textElement.style.marginTop = "8px";
+    textElement.textContent = text || "No result";
+    
+    // Clear any previous content and add the text
+    state.renderContainerEl.replaceChildren(textElement);
+    state.renderContainerEl.style.display = "block";
   }
 
-  function showLoadingSkeleton(state, source) {
-    if (!state.definitionEl || !state.resultSourceEl || !state.resultTextEl || !state.skeletonEl) {
+  function showLoadingState(state, source) {
+    if (!state.renderContainerEl || !state.renderImageEl) {
       return;
     }
-
-    state.resultSourceEl.replaceChildren();
-    state.resultSourceEl.append(createSourceBadge(source));
-    state.resultTextEl.style.display = "none";
-    state.skeletonEl.style.display = "grid";
-    state.definitionEl.style.display = "block";
+    
+    // Create a loading indicator
+    const loadingElement = document.createElement("div");
+    loadingElement.style.padding = "10px";
+    loadingElement.style.backgroundColor = "#f8fafc";
+    loadingElement.style.borderRadius = "8px";
+    loadingElement.style.border = "1px solid rgba(148, 163, 184, 0.28)";
+    loadingElement.style.fontSize = "12px";
+    loadingElement.style.lineHeight = "1.4";
+    loadingElement.style.color = "#0f172a";
+    loadingElement.style.marginTop = "8px";
+    loadingElement.textContent = "Loading...";
+    
+    // Clear any previous content and add the loading indicator
+    state.renderContainerEl.replaceChildren(loadingElement);
+    state.renderContainerEl.style.display = "block";
   }
 
   function scheduleLoadingState(state, source, token) {
@@ -362,20 +319,22 @@
         return;
       }
 
-      showLoadingSkeleton(state, source);
+      showLoadingState(state, source);
     }, 160);
   }
 
+  // Export the PeekUI object
   window.PeekUI = {
     ensurePopupStyles,
     createPopupNode,
     clearLoadingTimer,
-    setButtonsBusy,
     setSelectionText,
     showPopupAt,
     resetResult,
     hidePopup,
     setResult,
+    showLoadingState,
     scheduleLoadingState,
+    tryRenderImageFromText,
   };
 })();
