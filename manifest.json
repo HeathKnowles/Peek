@@ -30,6 +30,12 @@
       "js": [
         "content/peek-state.js",
         "content/peek-selection.js",
+        "content/connectors/base.js",
+        "content/connectors/google-forms.js",
+        "content/connectors/wikipedia.js",
+        "content/connectors/wiktionary.js",
+        "content/connectors/duckduckgo.js",
+        "content/connectors/stackoverflow.js",
         "content/peek-services.js",
         "content/peek-ui.js",
         "content/content.js"

@@ -12,9 +12,7 @@ This is a lightweight extension that shows a small smart popup when you select a
 Currently supported:
 Text
 Images
-
-To be Added:
-Forms
+Google Forms
 
 It combines multiple quick-reference sources in one place, with source links and quick copy:
 
@@ -22,6 +20,13 @@ It combines multiple quick-reference sources in one place, with source links and
 - Wiktionary (definitions)
 - DuckDuckGo Instant Answers
 - Stack Overflow (for technical terms)
+
+Connector modules live in `content/connectors/`:
+- `google-forms.js`
+- `wikipedia.js`
+- `wiktionary.js`
+- `duckduckgo.js`
+- `stackoverflow.js`
 
 ## Install
 
