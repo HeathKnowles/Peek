@@ -45,6 +45,96 @@
     return state.popupEl.contains(node);
   }
 
+  function isGoogleFormCandidateLink(href) {
+    return !!resolveGoogleFormCandidateUrl(href);
+  }
+
+  function resolveGoogleSearchRedirectUrl(rawHref) {
+    if (!rawHref || typeof rawHref !== "string") {
+      return "";
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(rawHref, window.location.href);
+    } catch {
+      return "";
+    }
+
+    const isGoogleDomain = /(^|\.)google\.[a-z.]+$/i.test(parsed.hostname);
+    if (!isGoogleDomain || parsed.pathname !== "/url") {
+      return "";
+    }
+
+    return parsed.searchParams.get("q") || parsed.searchParams.get("url") || parsed.searchParams.get("adurl") || "";
+  }
+
+  function resolveGenericRedirectUrl(rawHref) {
+    if (!rawHref || typeof rawHref !== "string") {
+      return "";
+    }
+
+    let parsed;
+    try {
+      parsed = new URL(rawHref, window.location.href);
+    } catch {
+      return "";
+    }
+
+    const keys = ["u", "url", "q", "target", "dest", "redirect"];
+    for (let i = 0; i < keys.length; i += 1) {
+      const value = parsed.searchParams.get(keys[i]);
+      if (value && /^https?:\/\//i.test(value)) {
+        return value;
+      }
+    }
+
+    return "";
+  }
+
+  function resolveGoogleFormCandidateUrl(href) {
+    if (!href || typeof href !== "string") {
+      return "";
+    }
+
+    const redirected = resolveGoogleSearchRedirectUrl(href) || resolveGenericRedirectUrl(href);
+    const candidate = redirected || href;
+    try {
+      const url = new URL(candidate, window.location.href);
+      const isFormsUrl = url.hostname === "docs.google.com" && /^\/forms\/d\/(?:e\/)?[a-zA-Z0-9_-]+/.test(url.pathname);
+      const isGoogleSitesUrl = url.hostname === "sites.google.com";
+      if (!isFormsUrl && !isGoogleSitesUrl) {
+        return "";
+      }
+      return url.toString();
+    } catch {
+      return "";
+    }
+  }
+
+  function clearTriggerTimer() {
+    if (state.triggerTimerId === null) {
+      return;
+    }
+
+    window.clearTimeout(state.triggerTimerId);
+    state.triggerTimerId = null;
+  }
+
+  function clearHoverTimer() {
+    if (state.hoverTimerId === null) {
+      return;
+    }
+
+    window.clearTimeout(state.hoverTimerId);
+    state.hoverTimerId = null;
+  }
+
+  function clearAllTimers() {
+    clearTriggerTimer();
+    clearHoverTimer();
+  }
+
   async function handleCopyAction() {
     if (!state.currentSelectionText) {
       return;
@@ -87,11 +177,8 @@
     const actionToken = state.actionToken + 1;
     state.actionToken = actionToken;
 
-    // First, try to render the selected text as an image
     const isImageShown = window.PeekUI.tryRenderImageFromText(state, state.currentSelectionText);
-    
     if (isImageShown) {
-      // If it's an image, don't fetch insights
       return;
     }
 
@@ -106,8 +193,10 @@
         setResult(state, result.source || "wikipedia", result.message, result.links || []);
       } else {
         clearLoadingTimer(state);
-        if (!options.silentFailure) {
-          setFallbackResult("wikipedia", result.message, selectionToken);
+        const failureSource = result?.source || "wikipedia";
+        const shouldShowFailure = !options.silentFailure || failureSource === "google-forms";
+        if (shouldShowFailure) {
+          setFallbackResult(failureSource, result.message || "No result found.", selectionToken);
         } else {
           resetResult(state);
         }
@@ -115,6 +204,27 @@
     } finally {
       // No-op: only copy action remains interactive.
     }
+  }
+
+  function showPeekForTextAtRect(text, rect) {
+    if (!text || !rect) {
+      return;
+    }
+
+    setSelectionText(state, text);
+    resetResult(state);
+    state.selectionToken += 1;
+    state.actionToken += 1;
+    clearLoadingTimer(state);
+    clearAllTimers();
+
+    const popup = createPopupNode(state);
+    const { x, y } = computePopupPosition(popup, rect);
+    showPopupAt(state, x, y);
+
+    window.setTimeout(() => {
+      runInsightsAction({ silentFailure: true });
+    }, 0);
   }
 
   function onPopupClick(event) {
@@ -138,7 +248,8 @@
       return;
     }
 
-    clearTriggerTimer();
+    clearAllTimers();
+    state.hoverAnchorEl = null;
     hidePopup(state);
   }
 
@@ -147,7 +258,8 @@
       return;
     }
 
-    clearTriggerTimer();
+    clearAllTimers();
+    state.hoverAnchorEl = null;
     hidePopup(state);
   }
 
@@ -157,18 +269,10 @@
     }
 
     if (event.key === "Escape") {
-      clearTriggerTimer();
+      clearAllTimers();
+      state.hoverAnchorEl = null;
       hidePopup(state);
     }
-  }
-
-  function clearTriggerTimer() {
-    if (state.triggerTimerId === null) {
-      return;
-    }
-
-    window.clearTimeout(state.triggerTimerId);
-    state.triggerTimerId = null;
   }
 
   function handleSelectionTrigger(source, eventTarget, selectionSnapshot) {
@@ -187,31 +291,21 @@
       return;
     }
 
-    setSelectionText(state, selectedText);
-    resetResult(state);
-    state.selectionToken += 1;
-    state.actionToken += 1;
-    clearLoadingTimer(state);
-    clearTriggerTimer();
-
     const selectionRect = selectionSnapshot?.rect || getSelectionRect();
     if (!selectionRect) {
       hidePopup(state);
       return;
     }
 
-    const popup = createPopupNode(state);
-    const { x, y } = computePopupPosition(popup, selectionRect);
-    showPopupAt(state, x, y);
-
-    // Show UI first, then fetch definition asynchronously.
-    window.setTimeout(() => {
-      runInsightsAction({ silentFailure: true });
-    }, 0);
+    state.hoverAnchorEl = null;
+    showPeekForTextAtRect(selectedText, selectionRect);
   }
 
   function queueSelectionTrigger(source, event) {
     clearTriggerTimer();
+    clearHoverTimer();
+    state.hoverAnchorEl = null;
+
     const eventTarget = event?.target || getSelectionOwnerNode() || document.body;
     const selectionSnapshot = {
       text: getCurrentSelectionText(),
@@ -222,6 +316,25 @@
       state.triggerTimerId = null;
       handleSelectionTrigger(source, eventTarget, selectionSnapshot);
     }, delay);
+  }
+
+  function queueHoverTrigger(anchorEl) {
+    clearTriggerTimer();
+    clearHoverTimer();
+    state.hoverTimerId = window.setTimeout(() => {
+      state.hoverTimerId = null;
+      if (!anchorEl || !anchorEl.isConnected) {
+        return;
+      }
+
+      const candidateUrl = resolveGoogleFormCandidateUrl(anchorEl.href);
+      if (!candidateUrl) {
+        return;
+      }
+
+      state.hoverAnchorEl = anchorEl;
+      showPeekForTextAtRect(candidateUrl, anchorEl.getBoundingClientRect());
+    }, 220);
   }
 
   function onMouseUp(event) {
@@ -235,7 +348,7 @@
   function onSelectionChange() {
     const text = getCurrentSelectionText();
     if (!text) {
-      if (state.isVisible) {
+      if (state.isVisible && !state.hoverAnchorEl) {
         hidePopup(state);
       }
       return;
@@ -246,11 +359,52 @@
       return;
     }
 
-    // Fallback trigger path for pages where mouse events are unreliable.
     queueSelectionTrigger("selectionchange", { target: ownerNode || document.body });
   }
 
-  // Expose a lightweight debug API for upcoming steps.
+  function onMouseOver(event) {
+    if (!event?.target || isNodeInsidePopup(event.target)) {
+      return;
+    }
+
+    const targetElement = event.target.nodeType === Node.ELEMENT_NODE ? event.target : event.target.parentElement;
+    const anchor = targetElement?.closest ? targetElement.closest("a[href]") : null;
+    if (!anchor || !resolveGoogleFormCandidateUrl(anchor.href)) {
+      return;
+    }
+
+    if (state.hoverAnchorEl === anchor && state.isVisible) {
+      return;
+    }
+
+    queueHoverTrigger(anchor);
+  }
+
+  function onMouseOut(event) {
+    if (!state.hoverAnchorEl) {
+      return;
+    }
+
+    const fromAnchor = event?.target?.closest ? event.target.closest("a[href]") : null;
+    if (fromAnchor !== state.hoverAnchorEl) {
+      return;
+    }
+
+    const nextNode = event.relatedTarget;
+    if (
+      nextNode &&
+      (state.hoverAnchorEl.contains(nextNode) || (state.popupEl && state.popupEl.contains(nextNode)))
+    ) {
+      return;
+    }
+
+    clearHoverTimer();
+    state.hoverAnchorEl = null;
+    if (state.isVisible) {
+      hidePopup(state);
+    }
+  }
+
   window.__peek = {
     state,
     runInsightsAction,
@@ -266,4 +420,6 @@
   document.addEventListener("mouseup", onMouseUp);
   document.addEventListener("dblclick", onDoubleClick);
   document.addEventListener("selectionchange", onSelectionChange);
+  document.addEventListener("mouseover", onMouseOver, true);
+  document.addEventListener("mouseout", onMouseOut, true);
 })();

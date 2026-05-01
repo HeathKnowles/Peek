@@ -6,6 +6,8 @@
       selectionToken: 0,
       actionToken: 0,
       triggerTimerId: null,
+      hoverTimerId: null,
+      hoverAnchorEl: null,
       renderToken: 0,
       renderUrl: "",
       popupEl: null,

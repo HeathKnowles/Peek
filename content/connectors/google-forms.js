@@ -5,22 +5,68 @@
     return;
   }
 
-  const { trimText, normalizeInline, decodeHtmlEntities } = utils;
+  const { trimText, normalizeInline, decodeHtmlEntities, fetchText } = utils;
 
-  function extractGoogleFormUrl(text) {
-    if (!text) {
+  function parseUrl(text) {
+    if (!text || typeof text !== "string") {
       return null;
     }
 
     const candidate = text.trim().replace(/^<|>$/g, "");
-    let parsedUrl;
     try {
-      parsedUrl = new URL(candidate);
+      return new URL(candidate);
     } catch {
       return null;
     }
+  }
 
-    if (parsedUrl.hostname !== "docs.google.com") {
+  function resolveGoogleSearchRedirectUrl(text) {
+    const parsedUrl = parseUrl(text);
+    if (!parsedUrl) {
+      return "";
+    }
+
+    const isGoogleDomain = /(^|\.)google\.[a-z.]+$/i.test(parsedUrl.hostname);
+    if (!isGoogleDomain || parsedUrl.pathname !== "/url") {
+      return "";
+    }
+
+    return parsedUrl.searchParams.get("q") || parsedUrl.searchParams.get("url") || parsedUrl.searchParams.get("adurl") || "";
+  }
+
+  function resolveGenericRedirectUrl(text) {
+    const parsedUrl = parseUrl(text);
+    if (!parsedUrl) {
+      return "";
+    }
+
+    const keys = ["u", "url", "q", "target", "dest", "redirect"];
+    for (let i = 0; i < keys.length; i += 1) {
+      const value = parsedUrl.searchParams.get(keys[i]);
+      if (value && /^https?:\/\//i.test(value)) {
+        return value;
+      }
+    }
+
+    return "";
+  }
+
+  function normalizeGoogleFormPath(pathname) {
+    let fetchPath = pathname;
+    const isPublicFormPath = /^\/forms\/d\/e\//.test(pathname);
+    if (isPublicFormPath) {
+      if (fetchPath.endsWith("/edit")) {
+        fetchPath = fetchPath.replace(/\/edit$/, "/viewform");
+      } else if (!fetchPath.endsWith("/viewform")) {
+        fetchPath = `${fetchPath.replace(/\/$/, "")}/viewform`;
+      }
+    }
+    return fetchPath;
+  }
+
+  function extractGoogleFormUrl(text) {
+    const parsedUrl = parseUrl(text);
+    if (!parsedUrl || parsedUrl.hostname !== "docs.google.com") {
       return null;
     }
 
@@ -29,20 +75,107 @@
       return null;
     }
 
-    let fetchPath = parsedUrl.pathname;
-    const isPublicFormPath = /^\/forms\/d\/e\//.test(parsedUrl.pathname);
-    if (isPublicFormPath) {
-      if (fetchPath.endsWith("/edit")) {
-        fetchPath = fetchPath.replace(/\/edit$/, "/viewform");
-      } else if (!fetchPath.endsWith("/viewform")) {
-        fetchPath = `${fetchPath.replace(/\/$/, "")}/viewform`;
-      }
-    }
-
+    const fetchPath = normalizeGoogleFormPath(parsedUrl.pathname);
     return {
       formId: pathMatch[1],
       url: `${parsedUrl.origin}${fetchPath}${parsedUrl.search}`,
     };
+  }
+
+  function decodeEscapedUrl(value) {
+    if (!value) {
+      return "";
+    }
+
+    return value
+      .replace(/\\u003d/g, "=")
+      .replace(/\\u0026/g, "&")
+      .replace(/\\\//g, "/");
+  }
+
+  function sanitizeUrlCandidate(value) {
+    if (!value) {
+      return "";
+    }
+
+    return decodeEscapedUrl(value)
+      .split(/(?:&quot;|&lt;|["'<\s])/i)[0]
+      .trim();
+  }
+
+  function extractFormUrlFromSiteHtml(html) {
+    if (!html) {
+      return null;
+    }
+
+    const directUrlMatch = html.match(/https:\/\/docs\.google\.com\/forms\/d\/(?:e\/)?[a-zA-Z0-9_-]+(?:\/(?:viewform|edit))?(?:\?[^"'<>\\\s]*)?/i);
+    if (directUrlMatch?.[0]) {
+      const normalized = sanitizeUrlCandidate(directUrlMatch[0]);
+      return extractGoogleFormUrl(normalized) || null;
+    }
+
+    const encodedMatch = html.match(/https:\\\/\\\/docs\.google\.com\\\/forms\\\/d\\\/(?:e\\\/)?[a-zA-Z0-9_-]+(?:\\\/(?:viewform|edit))?(?:\\\?[^"'<>\\\s]*)?/i);
+    if (encodedMatch?.[0]) {
+      const normalized = sanitizeUrlCandidate(encodedMatch[0]);
+      return extractGoogleFormUrl(normalized) || null;
+    }
+
+    return null;
+  }
+
+  async function resolveGoogleFormTarget(text) {
+    const redirected = resolveGoogleSearchRedirectUrl(text) || resolveGenericRedirectUrl(text);
+    const normalizedText = redirected || text;
+
+    const directForm = extractGoogleFormUrl(normalizedText);
+    if (directForm) {
+      return {
+        isGoogleForm: true,
+        formTarget: directForm,
+      };
+    }
+
+    const parsedUrl = parseUrl(normalizedText);
+    if (!parsedUrl) {
+      return { isGoogleForm: false };
+    }
+
+    if (parsedUrl.hostname !== "sites.google.com") {
+      return { isGoogleForm: false };
+    }
+
+    try {
+      const response = await fetchText(parsedUrl.toString(), 20000, { backgroundOnly: true });
+      if (!response.ok) {
+        const bridgeError = (response?.error || "").toLowerCase();
+        const message = bridgeError.includes("receiving end")
+          ? "Peek background worker is not connected. Reload the extension and retry."
+          : "Google Sites page is unavailable.";
+        return {
+          isGoogleForm: true,
+          errorMessage: message,
+        };
+      }
+
+      const html = response.text;
+      const formTarget = extractFormUrlFromSiteHtml(html);
+      if (!formTarget) {
+        return {
+          isGoogleForm: true,
+          errorMessage: "No Google Form found in this Google Sites page.",
+        };
+      }
+
+      return {
+        isGoogleForm: true,
+        formTarget,
+      };
+    } catch {
+      return {
+        isGoogleForm: true,
+        errorMessage: "Google Sites request failed.",
+      };
+    }
   }
 
   function extractMetaItemPropContent(html, itemProp) {
@@ -354,40 +487,79 @@
   }
 
   async function fetchGoogleFormPeek(text) {
-    const parsedUrl = extractGoogleFormUrl(text);
-    if (!parsedUrl) {
+    const resolved = await resolveGoogleFormTarget(text);
+    if (!resolved.isGoogleForm) {
       return { isGoogleForm: false };
     }
 
-    try {
-      const response = await fetch(parsedUrl.url, {
-        method: "GET",
-        credentials: "omit",
-      });
+    if (!resolved.formTarget) {
+      return {
+        isGoogleForm: true,
+        ok: false,
+        source: "google-forms",
+        message: resolved.errorMessage || "Google Form preview unavailable.",
+      };
+    }
 
+    try {
+      const response = await fetchText(resolved.formTarget.url, 20000, { backgroundOnly: true });
       if (!response.ok) {
+        const bridgeError = (response?.error || "").toLowerCase();
+        const message = bridgeError.includes("receiving end")
+          ? "Peek background worker is not connected. Reload the extension and retry."
+          : "Google Form preview unavailable.";
         return {
           isGoogleForm: true,
           ok: false,
           source: "google-forms",
-          message: "Google Form preview unavailable.",
+          message,
         };
       }
 
-      const html = await response.text();
-      const formPayload = extractGoogleFormPayload(html);
+      let html = response.text;
+      let formPayload = extractGoogleFormPayload(html);
       const isRestricted = html.includes("ServiceLogin") || html.includes("accounts.google.com");
 
       if (!formPayload && isRestricted) {
+        const authResponse = await fetchText(resolved.formTarget.url, 20000, {
+          backgroundOnly: true,
+          useGoogleAuth: true,
+        });
+
+        if (authResponse.ok) {
+          html = authResponse.text;
+          formPayload = extractGoogleFormPayload(html);
+        } else {
+          const authError = (authResponse?.error || "").toLowerCase();
+          const needsOAuthConnection = (
+            authError.includes("not authenticated") ||
+            authError.includes("oauth") ||
+            authError.includes("refresh token") ||
+            authError.includes("clientid is not configured") ||
+            authError.includes("exchange endpoint is not configured") ||
+            authError.includes("refresh endpoint is not configured")
+          );
+          return {
+            isGoogleForm: true,
+            ok: false,
+            source: "google-forms",
+            message: needsOAuthConnection
+              ? "Google Form is private. Connect Google OAuth in Peek settings, then retry."
+              : "Google Form is private or requires sign-in.",
+          };
+        }
+      }
+
+      if (!formPayload) {
         return {
           isGoogleForm: true,
           ok: false,
           source: "google-forms",
-          message: "Google Form is private or requires sign-in.",
+          message: "Google Form schema could not be read.",
         };
       }
 
-      const schema = buildGoogleFormSchema(formPayload, html, parsedUrl.url);
+      const schema = buildGoogleFormSchema(formPayload, html, resolved.formTarget.url);
       return {
         isGoogleForm: true,
         ok: true,
@@ -396,7 +568,7 @@
         links: [
           {
             label: "Open Google Form",
-            url: parsedUrl.url,
+            url: resolved.formTarget.url,
           },
         ],
       };

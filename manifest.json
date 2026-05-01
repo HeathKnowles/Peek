@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Peek Selection Popup",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Safari-like quick popup for short text selections.",
   "icons": {
     "16": "logo.png",
@@ -18,7 +18,13 @@
       "128": "logo.png"
     }
   },
-  "permissions": [],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "identity",
+    "storage"
+  ],
   "host_permissions": [
     "<all_urls>"
   ],
